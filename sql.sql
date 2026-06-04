@@ -130,6 +130,8 @@ CONTRACTS
 
 Question:
 Write a SQL query that returns for each month:
+  If a customer has a contract start on 1/1/2025 and then end on 1/31/2025 and then have another contract
+  start from 2/1/2025 and null in end date, it will not consider as a churned customer in anytime"
 
 MONTH
 ACTIVE_CUSTOMERS (active this month)
