@@ -119,4 +119,80 @@ from first
 group by 1
 order by 1
 
+"""3. Churn Rate
+Churn Rate = Customers lost this month / Customers active last month
+  
+CONTRACTS
+- contract_id
+- customer_id
+- contract_start_date
+- contract_end_date (NULL if still active)
+
+Question:
+Write a SQL query that returns for each month:
+
+MONTH
+ACTIVE_CUSTOMERS (active this month)
+CHURNED_CUSTOMERS (were active last month, not active this month)
+CHURN_RATE (churned / last month's active)"""
+
+with month as 
+  ((select min (date_trunc('month',contract_start_date)) as min, 
+  max(date_trunc('month',contract_end_date)) as max 
+  from contracts), 
+  mon as 
+  (select generate_series(min,
+  max, 
+  interval '1 month') 
+  as signup_month 
+  from month),
+active as (
+  select signup_month as month,
+  count(distinct(
+  customer_id
+  )) as active_customer
+  from mon 
+  left join contracts 
+  on singup_month>= date_trunc('month',contract_start_date)
+  and (signup_month <= date_trunc('month',contract_end_date)
+  or contract_end_date is null)
+  group by 1
+),
+  active_last as (
+  select month,
+  active_customer,
+  LAG(active_customer)
+  over (
+  order by month
+  ) as previous_month_active
+  from active
+  ),
+  churn as (
+   select signup_month as month,
+  count(distinct(
+  customer_id
+  )) as churn_customer
+  from mon 
+  left join contracts 
+  on (singup_month - interval '1 month'>= date_trunc('month',contract_start_date) 
+  and (signup_month - interval '1 month' <= date_trunc('month',contract_end_date) or contract_end_date is null) 
+  and NOT EXISTS (
+          SELECT 1
+          FROM contracts c_curr
+          WHERE c_curr.customer_id = contracts.customer_id
+            AND DATE_TRUNC('month', c_curr.contract_start_date) <= mon.signup_month
+            AND (
+                c_curr.contract_end_date IS NULL
+                OR DATE_TRUNC('month', c_curr.contract_end_date) >= mon.signup_month
+            )
+  group by 1
+  )))
+  select active_last.month,
+  active_last.active_customer as active_customers,
+  churn.churn_customer as churned_customers,
+  churn.churn_customer::numeric/(nullif(active_last.previous_month_active,0)) as churn_rate
+  from active_last
+  left join churn 
+  on active_last.month = churn.month
+  
   
