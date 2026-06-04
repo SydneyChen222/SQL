@@ -50,7 +50,10 @@ Output:
 TOTAL_CUSTOMERS
 RETAINED_MONTH_1
 RETAINED_MONTH_2
-RETAINED_MONTH_3"""
+RETAINED_MONTH_3
+Note: If a customer signed up on 1/1/2025 and then ended on 1/30/2025 and then re signed up on 3/1/2025, 
+  it will only be consider as the new customer for 1/1/2025 and the retention is only 0 month, the gap between will cut the retention, 
+  the question is only ask for new customers' concecutive retention """
 
 with first as (
   select distinct(customer_id), min(date_trunc('month',contract_start_date)) as signup_month
