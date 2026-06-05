@@ -161,7 +161,7 @@ with first as (
   count(distinct(case when 
   exists (
   select 1 from user_events e
-  where e.user_id = first.user_id
+  where e.user_id = first.user_id -- acts like a semi-join.but only return TRUE/FALSE, not extra rows
   and date_trunc('week',event_date)=signup_week + interval '1 week'
 ) then user_id end
   )) as RETAINED_WEEK_1,
