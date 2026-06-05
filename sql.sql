@@ -44,7 +44,8 @@ CONTRACTS
   
 Question:
 Write a SQL query that shows cohort retention. 
-  For each signup month, show what amount of customers still had an active contract 1 month later, 2 months later, and 3 months later.
+  For each signup month, show what amount of customers still had an active contract 1 month later, 
+  2 months later, and 3 months later.
 Output:
   SIGNUP_MONTH
 TOTAL_CUSTOMERS
@@ -60,7 +61,7 @@ with first as (
   from contracts
   group by 1
 )
-  select signup_month,
+  select distinct(signup_month),
   count(distinct(customer_id)) as total_customers,
 count(distinct(
   case when exists (
@@ -119,6 +120,92 @@ from first
 group by 1
 order by 1
 
+"""2.a
+  USER_EVENTS
+- event_id
+- user_id
+- company_id
+- event_date
+Question:
+Write a SQL query that shows weekly user retention by signup cohort.
+For each week a user first logged in, 
+  show what percentage of those users came back in week 1, week 2, and week 3 after their first login.
+  
+  Output:
+SIGNUP_WEEK
+TOTAL_USERS: Total users = number of users whose first ever login happened in that signup week.
+RETAINED_WEEK_1  (count)
+RETAINED_WEEK_2  (count)
+RETAINED_WEEK_3  (count)
+PCT_RETAINED_WEEK_1
+PCT_RETAINED_WEEK_2
+PCT_RETAINED_WEEK_3
+  A user is "retained" in week N if they logged in at least once during that week
+  
+User first logged in during Week 1 of January → that's their signup week
+They logged in again during Week 3 of January → that's 2 weeks after signup
+
+So they would be:
+Retained week 1 = No (no login in week 2)
+Retained week 2 = Yes (logged in during week 3)
+Retained week 3 = depends if they logged in week 4
+  """
+with first as (
+  select distinct(user_id), min(date_trunc('week',event_date)) as signup_week
+  from user_events
+  group by 1)
+  
+  select distinct(signup_week) as signup_week,
+  count(distinct(user_id)) as total_users,
+  
+  count(distinct(case when 
+  exists (
+  select 1 from user_events e
+  where e.user_id = first.user_id
+  and date_trunc('week',event_date)=signup_week + interval '1 week'
+) then user_id else end
+  )) as RETAINED_WEEK_1,
+  count(distinct(case when exists (
+  select 1 from user_events e
+  where e.user_id = first.user_id
+  and
+  date_trunc('week',event_date) =signup_week + interval '2 week'
+  ) then user_id else end
+  )) 
+  as RETAINED_WEEK_2,
+  count(distinct(case when exists (
+  select 1 from user_events e
+  where e.user_id = first.user_id
+  and date_trunc('week',event_date) =signup_week + interval '3 week'
+  ) then user_id else end
+  )) 
+  as RETAINED_WEEK_3,
+count(distinct(case when 
+  exists (
+  select 1 from user_events e
+  where e.user_id = first.user_id
+  and date_trunc('week',event_date)=signup_week + interval '1 week'
+) then user_id else end
+  )) ::numeric/ nullif(count(distinct(user_id)),0) as PCT_RETAINED_WEEK_1,
+  count(distinct(case when 
+  exists (
+  select 1 from user_events e
+  where e.user_id = first.user_id
+  and date_trunc('week',event_date)=signup_week + interval '2 week'
+) then user_id else end
+  )) ::numeric/ nullif(count(distinct(user_id)),0) as PCT_RETAINED_WEEK_2,
+   count(distinct(case when 
+  exists (
+  select 1 from user_events e
+  where e.user_id = first.user_id
+  and date_trunc('week',event_date)=signup_week + interval '3 week'
+) then user_id else end
+  )) ::numeric/ nullif(count(distinct(user_id)),0) as PCT_RETAINED_WEEK_3
+  from first 
+  group by 1
+
+  
+  
 """3. Churn Rate
 Churn Rate = Customers lost this month / Customers active last month
   
@@ -131,7 +218,7 @@ CONTRACTS
 Question:
 Write a SQL query that returns for each month:
   If a customer has a contract start on 1/1/2025 and then end on 1/31/2025 and then have another contract
-  start from 2/1/2025 and null in end date, it will not consider as a churned customer in anytime"
+  start from 2/1/2025 and null in end date, it will not consider as a churned customer in anytime
 
 MONTH
 ACTIVE_CUSTOMERS (active this month)
