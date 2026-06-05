@@ -163,21 +163,21 @@ with first as (
   select 1 from user_events e
   where e.user_id = first.user_id
   and date_trunc('week',event_date)=signup_week + interval '1 week'
-) then user_id else end
+) then user_id end
   )) as RETAINED_WEEK_1,
   count(distinct(case when exists (
   select 1 from user_events e
   where e.user_id = first.user_id
   and
   date_trunc('week',event_date) =signup_week + interval '2 week'
-  ) then user_id else end
+  ) then user_id end
   )) 
   as RETAINED_WEEK_2,
   count(distinct(case when exists (
   select 1 from user_events e
   where e.user_id = first.user_id
   and date_trunc('week',event_date) =signup_week + interval '3 week'
-  ) then user_id else end
+  ) then user_id end
   )) 
   as RETAINED_WEEK_3,
 count(distinct(case when 
@@ -185,21 +185,21 @@ count(distinct(case when
   select 1 from user_events e
   where e.user_id = first.user_id
   and date_trunc('week',event_date)=signup_week + interval '1 week'
-) then user_id else end
+) then user_id end
   )) ::numeric/ nullif(count(distinct(user_id)),0) as PCT_RETAINED_WEEK_1,
   count(distinct(case when 
   exists (
   select 1 from user_events e
   where e.user_id = first.user_id
   and date_trunc('week',event_date)=signup_week + interval '2 week'
-) then user_id else end
+) then user_id end
   )) ::numeric/ nullif(count(distinct(user_id)),0) as PCT_RETAINED_WEEK_2,
    count(distinct(case when 
   exists (
   select 1 from user_events e
   where e.user_id = first.user_id
   and date_trunc('week',event_date)=signup_week + interval '3 week'
-) then user_id else end
+) then user_id end
   )) ::numeric/ nullif(count(distinct(user_id)),0) as PCT_RETAINED_WEEK_3
   from first 
   group by 1
