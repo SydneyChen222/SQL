@@ -35,6 +35,89 @@ with month as
   group by 1 
   order by 1 asc
 
+  """" Date Spine 2
+  Interview Question
+You are given the following table:
+
+subscriptions
+customer_id	start_date	end_date
+A	2026-01-15	2026-03-10
+B	2026-02-01	NULL
+C	2026-03-20	2026-04-15
+Business Definition
+
+A customer is considered active in a month if their subscription overlaps with any day in that month.
+
+For example:
+
+Customer A is active in January, February, and March.
+Customer B is active from February onward.
+Customer C is active in March and April.
+Question
+
+Write a SQL query that returns the number of active customers for every month between:
+
+2026-01-01
+
+and
+
+2026-05-01
+
+Expected output:
+
+month	active_customers
+2026-01-01	?
+2026-02-01	?
+2026-03-01	?
+2026-04-01	?
+2026-05-01	?
+Interview Follow-up #1
+
+Now suppose management also wants to know:
+
+How many new customers started in each month?
+
+Add a column:
+
+month	active_customers	new_customers
+Interview Follow-up #2
+
+Now add another column:
+
+How many customers churned in each month?
+
+A customer is considered churned in the month containing their end_date.
+
+month	active_customers	new_customers	churned_customers
+Interview Follow-up #3 (Senior Level)
+
+Now calculate:
+
+Net Customer Change
+=
+New Customers - Churned Customers
+
+for each month."""
+ with month as 
+  (select 
+  generate_series('2026-01-01'::date, 
+  '2026-05-01'::date, 
+  interval '1 month')::date as month) 
+  select month, 
+  count(distinct( customer_id)) as active_customers, 
+  count(distinct(case when t1.month=date_trunc('month',start_date) 
+  then customer_id end)) as new_customers, 
+  count(distinct(case when t1.month = date_trunc('month', t2.end_date))) as churned_customers,
+   count(distinct(case when t1.month=date_trunc('month',start_date) 
+  then customer_id end))
+  -
+  count(distinct(case when t1.month = date_trunc('month', t2.end_date)))
+  as net_change
+  from month t1 
+  left join subscriptions t2 on t1.month>= date_trunc('month',start_date) 
+  and (t1.month <= date_trunc('month',t2.end_date) or t2.end_date is null
+  group by month
+  order by month 
 """2. Retention 
 CONTRACTS
 - contract_id
@@ -283,5 +366,6 @@ active as (
   from active_last
   left join churn 
   on active_last.month = churn.month
-  
+
+  """
   
