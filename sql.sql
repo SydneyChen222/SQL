@@ -35,7 +35,7 @@ with month as
   group by 1 
   order by 1 asc
 
-  """" Date Spine 2
+  """ Date Spine 2
   Interview Question
 You are given the following table:
 
