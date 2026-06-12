@@ -644,6 +644,23 @@ with monthly as(select date_trunc('month',delivery_date) as month,
   from running
   order by 1,2
 
+
+""" 7 days running total
+  For each server and day, compute the average CPU usage over the current day plus the previous six days — a 7-day rolling average.
+  server_id int	usage_date date	cpu_usage numeric
+1	2022-05-01	62.4
+1	2022-05-02	58.1
+
+  
+  """
+  SELECT server_id, usage_date,
+       ROUND(AVG(cpu_usage) OVER (PARTITION BY server_id
+                                  ORDER BY usage_date
+                                  ROWS BETWEEN 6 PRECEDING AND CURRENT ROW), 2) AS rolling_7d_avg
+FROM server_usage
+ORDER BY server_id, usage_date;
+  
+
 """ 8. TOP N per group 
   supplier_orders
 
