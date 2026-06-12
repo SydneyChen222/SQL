@@ -548,3 +548,44 @@ SELECT
     hierarchy_path
 FROM reports
 ORDER BY level, employee_id;
+"""5. Island and Gap
+inventory
+----------
+sku
+inventory_date
+inventory_qty
+| sku | inventory_date | inventory_qty |
+| --- | -------------- | ------------- |
+| A   | Jan 1          | 0             |
+| A   | Jan 2          | 0             |
+| A   | Jan 3          | 0             |
+| A   | Jan 4          | 15            |
+| A   | Jan 5          | 0             |
+| A   | Jan 6          | 0             |
+Question
+
+Find stockout periods lasting at least 2 consecutive days.
+| sku | start_date | end_date | days |
+| --- | ---------- | -------- | ---- |
+| A   | Jan 1      | Jan 3    | 3    |
+| A   | Jan 5      | Jan 6    | 2    |"""
+
+  with rn as (
+  select sku,inventory_date,ROW_NUMBER() OVER(PARTITION BY sku ORDER BY inventory_date) as rn
+  from invenotry_qty
+  where inventory_qty = 0
+  ),
+grp as (
+  select sku,inventory_date,
+  inventory_date - rn * interval '1 day' as grp
+from rn)
+select sku,
+  min(inventory_date) as start_date,
+  max(inventory_date) as end_date,
+  count(*) as days
+from grp 
+group by sku,grp
+having count(*) >=2
+
+
+
