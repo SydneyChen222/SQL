@@ -149,8 +149,8 @@ with first as (
 count(distinct(
   case when exists (
   select 1 from contracts
-  where 
-  signup_month + interval '1 month' >= date_trunc('month', contract_start_date)
+  where first.customer_id = contracts.customer_id
+  and signup_month + interval '1 month' >= date_trunc('month', contract_start_date)
   and (signup_month + interval '1 month' <= date_trunc('month', contract_end_date)
   or contract_end_date is null)
   ) then customer_id else end)
@@ -159,14 +159,16 @@ count(distinct(
   count(distinct(
   case when (exists (
   select 1 from contracts
-  where 
+  where first.customer_id = contracts.customer_id
+  and
   signup_month + interval '1 month' >= date_trunc('month', contract_start_date)
   and (signup_month + interval '1 month' <= date_trunc('month', contract_end_date)
   or contract_end_date is null)
   ))
   and (exists (
   select 1 from contracts
-  where 
+  where first.customer_id = contracts.customer_id
+  and
   signup_month + interval '2 month' >= date_trunc('month', contract_start_date)
   and (signup_month + interval '2 month' <= date_trunc('month', contract_end_date)
   or contract_end_date is null)
@@ -177,21 +179,24 @@ count(distinct(
   count(distinct(
   case when (exists (
   select 1 from contracts
-  where 
+  where first.customer_id = contracts.customer_id
+  and
   signup_month + interval '1 month' >= date_trunc('month', contract_start_date)
   and (signup_month + interval '1 month' <= date_trunc('month', contract_end_date)
   or contract_end_date is null)
   ))
   and (exists (
   select 1 from contracts
-  where 
+  where first.customer_id = contracts.customer_id
+  and
   signup_month + interval '2 month' >= date_trunc('month', contract_start_date)
   and (signup_month + interval '2 month' <= date_trunc('month', contract_end_date)
   or contract_end_date is null)
   ))
   and (exists (
   select 1 from contracts
-  where 
+  where first.customer_id = contracts.customer_id
+  and
   signup_month + interval '3 month' >= date_trunc('month', contract_start_date)
   and (signup_month + interval '3 month' <= date_trunc('month', contract_end_date)
   or contract_end_date is null)
@@ -252,14 +257,14 @@ with first as (
   select 1 from user_events e
   where e.user_id = first.user_id
   and
-  date_trunc('week',event_date) =signup_week + interval '2 week'
+  date_trunc('week',event_date) = signup_week + interval '2 week'
   ) then user_id end
   )) 
   as RETAINED_WEEK_2,
   count(distinct(case when exists (
   select 1 from user_events e
   where e.user_id = first.user_id
-  and date_trunc('week',event_date) =signup_week + interval '3 week'
+  and date_trunc('week',event_date) = signup_week + interval '3 week'
   ) then user_id end
   )) 
   as RETAINED_WEEK_3,
@@ -267,7 +272,7 @@ count(distinct(case when
   exists (
   select 1 from user_events e
   where e.user_id = first.user_id
-  and date_trunc('week',event_date)=signup_week + interval '1 week'
+  and date_trunc('week',event_date)= signup_week + interval '1 week'
 ) then user_id end
   )) ::numeric/ nullif(count(distinct(user_id)),0) as PCT_RETAINED_WEEK_1,
   count(distinct(case when 
@@ -368,95 +373,6 @@ active as (
   on active_last.month = churn.month
 
   """ 4 Window Function
-  You're thinking in the right direction, but there's a subtle point here that interviewers often test.
-
-My follow-up was:
-
-> Now there are **two highest-paid employees**.
-
-If the business requirement is:
-
-> "Return all employees tied for the highest salary in each department"
-
-Then `ROW_NUMBER()` is actually **not** the best choice.
-
-Example:
-
-| employee | department | salary |
-| -------- | ---------- | ------ |
-| Alice    | Sales      | 100000 |
-| Bob      | Sales      | 100000 |
-| Carol    | Sales      | 95000  |
-
-Using:
-
-```sql
-ROW_NUMBER() OVER (
-    PARTITION BY department
-    ORDER BY salary DESC
-)
-```
-
-might produce:
-
-| employee | row_num |
-| -------- | ------- |
-| Alice    | 1       |
-| Bob      | 2       |
-| Carol    | 3       |
-
-If you filter:
-
-```sql
-WHERE row_num = 1
-```
-
-you only get Alice.
-
-But Bob is also a highest-paid employee.
-
-In that case I'd use:
-
-```sql
-RANK() OVER (
-    PARTITION BY department
-    ORDER BY salary DESC
-)
-```
-
-Result:
-
-| employee | rank |
-| -------- | ---- |
-| Alice    | 1    |
-| Bob      | 1    |
-| Carol    | 3    |
-
-Then:
-
-```sql
-WHERE rank = 1
-```
-
-returns both Alice and Bob.
-
----
-
-Now if the question were:
-
-> Return **one** highest-paid employee per department
-
-then your `ROW_NUMBER()` solution is perfect.
-
-And this is exactly what I'd say in an interview:
-
-> Since the question asks for the highest-paid employee (singular), I used `ROW_NUMBER()` to guarantee one record per department. If the business wanted all employees tied for the highest salary, I'd switch to `RANK()` and filter on rank = 1.
-
-That's a very senior-level answer because you're clarifying the business requirement instead of blindly coding.
-
----
-
-Ready for Question 2?
 
 ### inventory_transactions
 
@@ -471,8 +387,7 @@ Ready for Question 2?
 **Question:**
 
 Return the latest inventory quantity for each SKU.
-b. 
-Now return:
+and also return:
 
 sku	latest_inventory	previous_inventory
 A	80	90
@@ -510,9 +425,9 @@ with rn as (
   previous_inventory 
   from rn 
   where rn = 1;
-""" recrusive 
+  
+"""5. recrusive 
 All reports under a manager recursive CTE
-Reported Tesla SQL task · the one pattern the earlier sections don't cover
 
 An organization table has employee_id, manager_id, and name. 
   Find every direct and indirect report under manager_id = 1, 
@@ -548,7 +463,8 @@ SELECT
     hierarchy_path
 FROM reports
 ORDER BY level, employee_id;
-"""5. Island and Gap
+  
+"""6. Island and Gap
 inventory
 ----------
 sku
