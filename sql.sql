@@ -372,6 +372,54 @@ active as (
   left join churn 
   on active_last.month = churn.month
 
+  """another churn rate 
+  Subscription business
+A customer churned if:
+
+active on first day of month
+NOT active on last day of month
+  | customer | start_date | end_date |
+| -------- | ---------- | -------- |
+| A        | Jan 1      | Mar 15   |
+| B        | Jan 1      | NULL     |
+| C        | Feb 10     | Apr 20   |
+
+  Monthly churn over time:
+
+month	active_users	churned_users	churn_rate
+Jan	100	10	10%
+Feb	120	15	12.5%
+  """
+  
+with monthly_users as (
+select distinct
+    user_id,
+    date_trunc('month', event_date) as month
+from user_events
+),
+
+churn as (
+select
+    m1.month,
+    count(distinct m1.user_id) as active_users,
+    count(
+        distinct case
+            when m2.user_id is null -- active in m1, but missing in m2
+            then m1.user_id
+        end
+    ) as churned_users
+from monthly_users m1
+left join monthly_users m2
+    on m1.user_id = m2.user_id
+   and m2.month = m1.month + interval '1 month' -- make sure we are getting the churned user for month 2 is from month 1 active users
+group by 1
+)
+
+select *,
+       churned_users * 1.0 / active_users as churn_rate
+from churn
+
+  
   """ 4 Window Function
 
 ### inventory_transactions
