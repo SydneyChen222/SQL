@@ -510,3 +510,41 @@ with rn as (
   previous_inventory 
   from rn 
   where rn = 1;
+""" recrusive 
+All reports under a manager recursive CTE
+Reported Tesla SQL task · the one pattern the earlier sections don't cover
+
+An organization table has employee_id, manager_id, and name. 
+  Find every direct and indirect report under manager_id = 1, 
+  returning employee_id, manager_id, name, the level in the tree, and the full hierarchy_path."""
+WITH RECURSIVE reports AS (
+    -- base case: direct reports under manager_id = 1
+    SELECT
+        employee_id,
+        manager_id,
+        name,
+        1 AS level,
+        name::text AS hierarchy_path
+    FROM organization
+    WHERE manager_id = 1
+    UNION ALL
+    -- recursive case: find reports of previous reports
+    SELECT
+        o.employee_id,
+        o.manager_id,
+        o.name,
+        r.level + 1 AS level,
+        r.hierarchy_path || ' > ' || o.name AS hierarchy_path
+    FROM organization o
+    JOIN reports r
+        ON o.manager_id = r.employee_id
+)
+
+SELECT
+    employee_id,
+    manager_id,
+    name,
+    level,
+    hierarchy_path
+FROM reports
+ORDER BY level, employee_id;
