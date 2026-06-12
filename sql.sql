@@ -644,6 +644,48 @@ with monthly as(select date_trunc('month',delivery_date) as month,
   from running
   order by 1,2
 
+""" 8. TOP N per group 
+  supplier_orders
+
+| supplier | plant | month | spend |
+| -------- | ----- | ----- | ----- |
+| S1       | TX    | Jan   | 1000  |
+| S2       | TX    | Jan   | 900   |
+| S3       | TX    | Jan   | 800   |
+| S4       | TX    | Jan   | 700   |
+
+Question
+
+For each plant and month, return the top 3 suppliers by total spend.
+
+Output:
+
+| month | plant | supplier | spend |
+| ----- | ----- | -------- | ----- |
+| Jan   | TX    | S1       | 1000  |
+| Jan   | TX    | S2       | 900   |
+| Jan   | TX    | S3       | 800   |
+
+
+  If there is a tie for third place, should I include all ties or return exactly 3 rows?
+  if include all ties then dense_rank()
+  if only 3 supplier for each group then row_number()
+  if need to find the second highest spend then rank(), since there might be no rn=2 if we use dense_rank() and the rn =2 for row_number may be still the highest if the No.1 high has a tie.
+  """
+  
+with t1 as(
+  select month, plant,supplier_id, sum(spend) as spend
+  from supplier_orders
+  group by 1,2,3),
+  rn as (
+  select month,plant,supplier,spend,
+  dense_rank() over(partition by month, plant order by spend desc) as rn
+  from t1)
+  select month, plant, supplier,spend
+  from rn
+  where rn<=3
+  order by 1,2,3
+  
 
   
 
