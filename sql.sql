@@ -367,5 +367,146 @@ active as (
   left join churn 
   on active_last.month = churn.month
 
-  """
-  
+  """ 4 Window Function
+  You're thinking in the right direction, but there's a subtle point here that interviewers often test.
+
+My follow-up was:
+
+> Now there are **two highest-paid employees**.
+
+If the business requirement is:
+
+> "Return all employees tied for the highest salary in each department"
+
+Then `ROW_NUMBER()` is actually **not** the best choice.
+
+Example:
+
+| employee | department | salary |
+| -------- | ---------- | ------ |
+| Alice    | Sales      | 100000 |
+| Bob      | Sales      | 100000 |
+| Carol    | Sales      | 95000  |
+
+Using:
+
+```sql
+ROW_NUMBER() OVER (
+    PARTITION BY department
+    ORDER BY salary DESC
+)
+```
+
+might produce:
+
+| employee | row_num |
+| -------- | ------- |
+| Alice    | 1       |
+| Bob      | 2       |
+| Carol    | 3       |
+
+If you filter:
+
+```sql
+WHERE row_num = 1
+```
+
+you only get Alice.
+
+But Bob is also a highest-paid employee.
+
+In that case I'd use:
+
+```sql
+RANK() OVER (
+    PARTITION BY department
+    ORDER BY salary DESC
+)
+```
+
+Result:
+
+| employee | rank |
+| -------- | ---- |
+| Alice    | 1    |
+| Bob      | 1    |
+| Carol    | 3    |
+
+Then:
+
+```sql
+WHERE rank = 1
+```
+
+returns both Alice and Bob.
+
+---
+
+Now if the question were:
+
+> Return **one** highest-paid employee per department
+
+then your `ROW_NUMBER()` solution is perfect.
+
+And this is exactly what I'd say in an interview:
+
+> Since the question asks for the highest-paid employee (singular), I used `ROW_NUMBER()` to guarantee one record per department. If the business wanted all employees tied for the highest salary, I'd switch to `RANK()` and filter on rank = 1.
+
+That's a very senior-level answer because you're clarifying the business requirement instead of blindly coding.
+
+---
+
+Ready for Question 2?
+
+### inventory_transactions
+
+| sku | transaction_date | inventory_qty |
+| --- | ---------------- | ------------- |
+| A   | 2026-01-01       | 100           |
+| A   | 2026-01-03       | 90            |
+| A   | 2026-01-05       | 80            |
+| B   | 2026-01-02       | 50            |
+| B   | 2026-01-04       | 60            |
+
+**Question:**
+
+Return the latest inventory quantity for each SKU.
+b. 
+Now return:
+
+sku	latest_inventory	previous_inventory
+A	80	90
+B	60	50
+"""
+  WITH rn AS (
+    SELECT
+        sku,
+        transaction_date,
+        inventory_qty,
+        ROW_NUMBER() OVER (
+            PARTITION BY sku
+            ORDER BY transaction_date DESC
+        ) AS rn
+    FROM inventory_transactions
+)
+SELECT
+    sku,
+    transaction_date,
+    inventory_qty
+FROM rn
+WHERE rn = 1;
+--b
+with rn as (
+  select sku,
+  transaction_date,
+  inventory_qty,
+  ROW_NUMBER() OVER( PARTITION BY sku 
+  ORDER BY transaction_date DESC) as rn,
+  LAG(inventory_qty) OVER(PARTITION BY sku 
+  ORDER BY transaction_date DESC) as previous_inventory
+  from inventory_transactions
+  )
+  select sku,inventory_qty as latest_inventory,
+  previous_inventory 
+  from rn 
+  where rn = 1;
