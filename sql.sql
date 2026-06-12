@@ -551,5 +551,42 @@ from grp
 group by sku,grp
 having count(*) >=2
 
+  """7 Window Function Running total
+  Table: 
+  deliveries
+delivery_date  factory_id  vehicles_delivered
+  
+  For each factory and month show:
 
+mom_growth_pct
+| month | factory | monthly | ytd_running | mom  |
+| ----- | ------- | ------- | ----------- | ---- |
+| Jan   | TX      | 1000    | 1000        | NULL |
+| Feb   | TX      | 1200    | 2200        | 20%  |
+| Mar   | TX      | 1500    | 3700        | 25%  |
+Note: Running Total Resets every year
+"""
+with monthly as(select date_trunc('month',delivery_date) as month,
+  factory_id, sum(vehicles_delivered) as monthly
+  from deliveries
+  group by 1,2
+  order by 1,2),
+  running as(
+  select month,factory_id,
+  monthly,
+  sum(vehicles_delivered) OVER (
+  PARTITION BY factory_id, date_trunc('year', year) 
+  ORDER BY month
+  rows between unbounded preceding and current row) as ytd_running
+  from monthly)
+   select month,factory_id,
+  monthly,ytd_running,
+  (monthly - LAG(monthly) OVER(PARTITION BY factory_id ORDER BY month))::numeric
+  /
+  nullif(LAG(monthly) OVER(PARTITION BY factory_id ORDER BY month),0) as mom
+  from running
+  order by 1,2
+
+
+  
 
