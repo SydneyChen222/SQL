@@ -118,7 +118,7 @@ for each month."""
   and (t1.month <= date_trunc('month',t2.end_date) or t2.end_date is null
   group by month
   order by month 
-"""2. Retention 
+"""2. Cohort Retention 
 CONTRACTS
 - contract_id
 - customer_id
@@ -208,7 +208,7 @@ from first
 group by 1
 order by 1
 
-"""2.a
+"""2.Normal cohort retention
   USER_EVENTS
 - event_id
 - user_id
@@ -291,6 +291,63 @@ count(distinct(case when
   )) ::numeric/ nullif(count(distinct(user_id)),0) as PCT_RETAINED_WEEK_3
   from first 
   group by 1
+
+  """ 3. normal Rentention 
+  Question:
+Of users active in Month M, how many were active again in Month M+1?
+You're looking at all active users, regardless of when they signed up.
+| User | Jan | Feb |
+| ---- | --- | --- |
+| A    | ✓   | ✓   |
+| B    | ✓   | ✗   |
+| C    | ✓   | ✓   |
+| D    | ✗   | ✓   |
+
+  | user | event_date |
+| ---- | ----- |
+| A    | Jan   |
+| A    | Feb   |
+| B    | Jan   |
+| C    | Feb   |
+
+
+  """
+  with monthly_users as (
+    select distinct
+        user_id,
+        date_trunc('month', event_date) as month
+    from user_events
+
+)
+
+select
+    m1.month,
+    count(distinct m1.user_id) as active_users,
+    count(distinct m2.user_id) as retained_users,
+    count(
+        distinct case
+            when m2.user_id is null
+            then m1.user_id
+        end
+    ) as churned_users,
+    count(distinct m2.user_id) * 1.0
+        / count(distinct m1.user_id)
+        as retention_rate,
+    count(
+        distinct case
+            when m2.user_id is null
+            then m1.user_id
+        end
+    ) * 1.0
+        / count(distinct m1.user_id)
+        as churn_rate
+
+from monthly_users m1
+left join monthly_users m2
+    on m1.user_id = m2.user_id
+   and m2.month = m1.month + interval '1 month' -- This is for retain / churn in next month
+group by 1
+order by 1;
 
   
   
