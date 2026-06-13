@@ -741,5 +741,36 @@ from department
 order by id;
 
 
+
+with numbered as (
+    select
+        id,
+        name,
+        row_number() over (order by id) as rn
+    from department
+),
+
+mapped as (
+    select
+        id,
+        name,
+        rn,
+        case
+            when rn % 2 = 1 then rn + 1
+            when rn % 2 = 0 then rn - 1
+        end as partner_rn
+    from numbered
+)
+
+select
+    m.id as original_id,
+    coalesce(p.id, m.id) as swapped_id,
+    m.name as original_name,
+    coalesce(p.name, m.name) as swapped_name
+from mapped m
+left join numbered p
+    on m.partner_rn = p.rn
+order by m.id;
+
   
 
