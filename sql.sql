@@ -703,6 +703,43 @@ with t1 as(
   where rn<=3
   order by 1,2,3
   
+""" table: departments
+  id name
+  2  D1
+  3  D2
+  4  D3
+  5  D4
+  6  D5
+  write a query to return following outputs:
+  original_id   swapped_id    original_name    swapped_name
+  2               3               D1              D2
+  3               2               D2              D1
+  4               5               D3              D4
+  5               4               D4              D3
+  6               6               D5              D5
+  if the number of the total departments is odd then swap each 2 consecutive department id and name, 
+  keep the last department not swapped.
+  """
+select
+    id as original_id,
+    case
+        when id % 2 = 1 and id != (select max(id) from department)
+            then id + 1
+        when id % 2 = 0
+            then id - 1
+        else id
+    end as swapped_id,
+    name as original_name,
+    case
+        when id % 2 = 1 and id != (select max(id) from department)
+            then lead(name) over (order by id)
+        when id % 2 = 0
+            then lag(name) over (order by id)
+        else name
+    end as swapped_name
+from department
+order by id;
+
 
   
 
