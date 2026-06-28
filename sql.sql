@@ -349,6 +349,104 @@ left join monthly_users m2
 group by 1
 order by 1;
 
+"""
+# — Cohort Retention Analysis
+
+You are given a table:
+
+### `orders`
+
+| column      | type |
+| ----------- | ---- |
+| customer_id | INT  |
+| order_date  | DATE |
+
+Each row represents **one purchase**.
+
+---
+
+## Task
+
+For every **cohort month**, calculate the retention rate in Month 0, Month 1, Month 2...
+
+A customer's **cohort month** is the month of their **first-ever purchase**.
+
+Output:
+
+| cohort_month | months_since_signup | retained_customers | cohort_size | retention_rate |
+| ------------ | ------------------- | ------------------ | ----------- | -------------- |
+| 2024-01      | 0                   | 100                | 100         | 1.0000         |
+| 2024-01      | 1                   | 75                 | 100         | 0.7500         |
+| 2024-01      | 2                   | 61                 | 100         | 0.6100         |
+| 2024-02      | 0                   | 120                | 120         | 1.0000         |
+| 2024-02      | 1                   | 92                 | 120         | 0.7667         |
+
+---
+
+### Definitions
+
+A customer is **retained** in Month N if they made **at least one purchase** in that month.
+
+Example:
+
+Customer 1
+
+| order_date |
+| ---------- |
+| 2024-01-10 |
+| 2024-01-25 |
+| 2024-02-08 |
+| 2024-04-02 |
+
+Their contribution is:
+
+| cohort  | month_since_signup |
+| ------- | ------------------ |
+| 2024-01 | 0                  |
+| 2024-01 | 1                  |
+| 2024-01 | 3                  |
+
+Notice:
+
+* Two purchases in January still count as **one retained customer** in Month 0.
+* Missing March means **no row for Month 2** for this customer.
+
+  """
+  WITH first_order AS (
+    SELECT
+        customer_id,
+        MIN(date_trunc('month', order_date)) OVER (PARTITION BY customer_id) AS first_month,
+        (
+            EXTRACT(YEAR FROM date_trunc('month', order_date)) * 12
+            + EXTRACT(MONTH FROM date_trunc('month', order_date))
+        )
+        -
+        (
+            EXTRACT(YEAR FROM MIN(date_trunc('month', order_date)) OVER (PARTITION BY customer_id)) * 12
+            + EXTRACT(MONTH FROM MIN(date_trunc('month', order_date)) OVER (PARTITION BY customer_id))
+        ) AS months_since_signup
+    FROM orders
+    GROUP BY customer_id, date_trunc('month', order_date)
+),
+cohort AS (
+    SELECT
+        customer_id,
+        first_month,
+        months_since_signup,
+        COUNT(CASE WHEN months_since_signup = 0 THEN customer_id END)
+            OVER (PARTITION BY first_month) AS cohort_size
+    FROM first_order
+)
+SELECT
+    to_char(first_month, 'YYYY-MM') AS cohort_month,
+    months_since_signup,
+    COUNT(DISTINCT customer_id) AS retained_customers,
+    cohort_size,
+    ROUND(COUNT(DISTINCT customer_id)::numeric / NULLIF(cohort_size, 0), 4) AS retention_rate
+FROM cohort
+GROUP BY first_month, months_since_signup, cohort_size
+ORDER BY first_month, months_since_signup;
+  
   
   
 """3. Churn Rate
