@@ -1099,3 +1099,45 @@ LEFT JOIN first_cart_after_view c
     ON v.user_id = c.user_id
 LEFT JOIN first_purchase_after_cart p
     ON v.user_id = p.user_id;
+
+"""
+ ----- Resurrected Users
+For each month, return:
+month	|  resurrected_users
+Definition:
+A resurrected user is someone who
+was active this month
+was NOT active last month
+BUT had been active sometime before last month
+  """
+with user_act as (
+  select distinct(user_id) as user_id, 
+  date_trunc('month',event_date) as active_month 
+  from events
+  order by 1,2
+),
+t1 as (
+  select user_id, active_month,
+  LAG(active_month) over(PARTITION BY user_id Order by active_month) as previous_month,
+  from user_act
+),
+diff as (
+  select user_id,active_month,
+  case when previous_month is null then null
+  else EXTRACT(YEAR FROM AGE(date_trunc('month',active_month), date_trunc('month', previous_month))) * 12 + 
+       EXTRACT(MONTH FROM AGE(date_trunc('month', active_month), date_trunc('month', previous_month))) 
+  end 
+  as gap
+  from t1 
+)
+
+select active_month as month,
+count(distinct(user_id)) as resurrected_users
+from diff
+  where gap is not null
+and gap > 1
+group by 1
+order by 1
+
+
+
