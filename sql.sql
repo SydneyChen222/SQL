@@ -934,5 +934,73 @@ with cte as (
 select id, company, salary
 from cte
 where rn between (cnt + 1) / 2 and (cnt + 2) / 2;
+
+"""
+Sessionization
+You are given a table:
+### `events`
+| column     | type      |
+| ---------- | --------- |
+| user_id    | INT       |
+| event_time | TIMESTAMP |
+| event_type | TEXT      |
+
+A new session starts when either:
+1. It is the user's first event
+2. The time gap from the previous event is greater than 30 minutes
+Write a PostgreSQL query to return:
+
+| user_id | session_id | session_start | session_end | event_count |
+| ------- | ---------: | ------------- | ----------- | ----------: |
+
+Requirements:
+* `session_id` should start from `1` for each user.
+* Events exactly **30 minutes apart** belong to the same session.
+* Events more than **30 minutes apart** start a new session.
+* Sort by `user_id`, `session_id`.
+  """
+  with t1 as 
+  (select user_id, event_time, 
+  LAG(event_time) over(partition by user_id order by event_time) as previous, 
+  event_type 
+  from events order by 1,2), 
   
+  gaps as 
+  (select user_id, 
+  event_time, 
+  previous, 
+  case when previous is null then null 
+  else EXTRACT(EPOCH FROM (event_time -previous)) / 60 
+  end as gap, 
+  event_type 
+  from t1) ,
+  
+  session as 
+  (select user_id, 
+  event_time, 
+  previous, 
+  row_number () over (partition by user_id order by event_time) as session_id 
+  from gaps 
+  where gap is null
+  or gap > 30),
+
+  session_e as (
+  select t1.user_id, 
+  t1.session_id, 
+  t1.event_time as session_start, 
+  lead(t1.previous) over(partition by user_id order by event_time) as session_end
+  from session t1)
+
+select user_id, session_id,session_start,
+ COALESCE(t1.session_end, MAX(t2.event_time)) as session_end, 
+  count(*) as event_count
+from session_e t1
+left join gaps t2
+on t1.user_id = t2.user_id
+and t1.session_start <= t2.event_time 
+  and (t1.session_end >= t2.event_time
+  or t1.session_end IS NULL)
+group by 1,2,3,4
+order by 1,2
+
 
