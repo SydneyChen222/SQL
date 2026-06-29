@@ -1053,4 +1053,49 @@ round( count(distinct(case when event_type = 'purchase' then user_id end))::nume
   /
   nullif(count(distinct(case when event_type = 'view_product' then user_id end)),0),4) as view_to_purchase_rate
 from events
-
+"""
+  if we need sequential funnal analysis 
+  like each step is strickly followed by nexrt step
+  """
+WITH first_view AS (
+    SELECT
+        user_id,
+        MIN(event_time) AS view_time
+    FROM events
+    WHERE event_type = 'view_product'
+    GROUP BY user_id
+),
+first_cart_after_view AS (
+    SELECT
+        e.user_id,
+        MIN(e.event_time) AS cart_time
+    FROM events e
+    JOIN first_view v
+        ON e.user_id = v.user_id
+       AND e.event_time >= v.view_time
+    WHERE e.event_type = 'add_to_cart'
+    GROUP BY e.user_id
+),
+first_purchase_after_cart AS (
+    SELECT
+        e.user_id,
+        MIN(e.event_time) AS purchase_time
+    FROM events e
+    JOIN first_cart_after_view c
+        ON e.user_id = c.user_id
+       AND e.event_time >= c.cart_time
+    WHERE e.event_type = 'purchase'
+    GROUP BY e.user_id
+)
+SELECT
+    COUNT(DISTINCT v.user_id) AS viewed_users,
+    COUNT(DISTINCT c.user_id) AS added_users,
+    COUNT(DISTINCT p.user_id) AS purchased_users,
+    ROUND(COUNT(DISTINCT c.user_id)::numeric / NULLIF(COUNT(DISTINCT v.user_id), 0), 4) AS view_to_cart_rate,
+    ROUND(COUNT(DISTINCT p.user_id)::numeric / NULLIF(COUNT(DISTINCT c.user_id), 0), 4) AS cart_to_purchase_rate,
+    ROUND(COUNT(DISTINCT p.user_id)::numeric / NULLIF(COUNT(DISTINCT v.user_id), 0), 4) AS view_to_purchase_rate
+FROM first_view v
+LEFT JOIN first_cart_after_view c
+    ON v.user_id = c.user_id
+LEFT JOIN first_purchase_after_cart p
+    ON v.user_id = p.user_id;
