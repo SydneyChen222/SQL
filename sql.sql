@@ -1003,4 +1003,54 @@ and t1.session_start <= t2.event_time
 group by 1,2,3,4
 order by 1,2
 
+"""
+Purchase Funnel Conversion
+Table:
+```text
+events
+------
+user_id INT
+event_time TIMESTAMP
+event_type TEXT
+```
+Each row is one user event. Relevant event types are:
+```text
+view_product
+add_to_cart
+purchase
+```
+Return one row showing:
+
+| viewed_users | added_users | purchased_users | view_to_cart_rate | cart_to_purchase_rate | view_to_purchase_rate |
+
+Definitions:
+
+* `viewed_users`: users who had at least one `view_product`
+* `added_users`: users who had at least one `add_to_cart`
+* `purchased_users`: users who had at least one `purchase`
+* Conversion rates should be based on distinct users.
+* Round rates to 4 decimals.
+
+Example:
+
+* `view_to_cart_rate = added_users / viewed_users`
+* `cart_to_purchase_rate = purchased_users / added_users`
+* `view_to_purchase_rate = purchased_users / viewed_users`
+
+Use PostgreSQL.
+  """
+
+select count(distinct(case when event_type = 'view_product' then user_id end)) as viewed_users,
+count(distinct(case when event_type = 'add_to_cart' then user_id end)) as added_users,
+count(distinct(case when event_type = 'purchase' then user_id end)) as purchased_users,
+round( count(distinct(case when event_type = 'add_to_cart' then user_id end))::numeric
+  /
+  nullif(count(distinct(case when event_type = 'view_product' then user_id end)),0),4) as view_to_cart_rate,
+round( count(distinct(case when event_type = 'purchase' then user_id end))::numeric
+  /
+  nullif(count(distinct(case when event_type = 'add_to_cart' then user_id end)),0),4) as cart_to_purchase_rate,
+round( count(distinct(case when event_type = 'purchase' then user_id end))::numeric
+  /
+  nullif(count(distinct(case when event_type = 'view_product' then user_id end)),0),4) as view_to_purchase_rate
+from events
 
