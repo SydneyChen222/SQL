@@ -1227,6 +1227,63 @@ group by 1
 order by 1
 
 """
+## Q4 — New / Returning / Resurrected Users
+Table:
+events
+------
+user_id
+event_date
+Each row means a user was active on that date.
+For each month, return:
+month | new_users | returning_users | resurrected_users
+
+Definitions:
+A **new user** is active this month and has no activity before this month.
+A **returning user** is active this month and was also active last month.
+A **resurrected user** is active this month, was **not** active last month, but had activity before last month.
+Use PostgreSQL.
+  """
+with new_user as 
+  (select distinct user_id,  
+  date_trunc('month', event_date)::date AS event_month, 
+    MIN(date_trunc('month', event_date)::date) OVER (
+            PARTITION BY user_id
+        ) AS first_month 
+  from events 
+  order by 1,2), 
+t1 as (
+  select user_id, first_month,
+  event_month,
+  LAG(event_month) over(PARTITION BY user_id order by event_month) as previous_active_month
+  from new_user
+  order by 1,2,3
+),
+  t2 as (
+  select user_id, first_month,
+  event_month, previous_active_month,
+          (
+            EXTRACT(YEAR FROM event_month) * 12
+            + EXTRACT(MONTH FROM event_month)
+        )
+        -
+        (
+            EXTRACT(YEAR FROM previous_active_month) * 12
+            + EXTRACT(MONTH FROM previous_active_month)
+        ) AS diff
+  from t1
+  )
+  select event_month as month,
+  count(distinct(case when event_month = first_month then user_id end)) as new_users,
+  count(distinct(case when diff = 1 then user_id end)) as returning_users,
+  count(distinct(case when diff > 1 then user_id end)) as resurrected_user
+from t2
+  group by 1
+  order by 1
+
+  -- or
+  
+  
+"""
 # Q2 — LTV Curve (Lifetime Value)
 orders
 ------
