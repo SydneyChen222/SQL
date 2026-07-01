@@ -1139,5 +1139,131 @@ and gap > 1
 group by 1
 order by 1
 
+"""
+# Q2 — LTV Curve (Lifetime Value)
+orders
+------
+customer_id
+order_date
+revenue
+```
+Each row is one purchase.
 
+For every **cohort month**, calculate the **cumulative LTV curve**.
+A customer's **cohort month** is the month of their **first purchase**.
+
+Return:
+| cohort_month | months_since_signup | cumulative_ltv |
+| ------------ | ------------------- | -------------- |
+| 2024-01      | 0                   | 100.00         |
+| 2024-01      | 1                   | 185.50         |
+| 2024-01      | 2                   | 247.20         |
+| 2024-02      | 0                   | 92.30          |
+| 2024-02      | 1                   | 176.80         |
+
+### Example
+
+Customer A
+| order_date | revenue |
+| ---------- | ------- |
+| 2024-01-05 | 100     |
+| 2024-02-10 | 50      |
+| 2024-02-20 | 30      |
+| 2024-04-02 | 20      |
+
+Contributes:
+
+| cohort  | month_since_signup | revenue |
+| ------- | ------------------ | ------- |
+| 2024-01 | 0                  | 100     |
+| 2024-01 | 1                  | 80      |
+| 2024-01 | 3                  | 20      |
+
+The LTV curve becomes:
+
+| month_since_signup | cumulative_ltv |
+| ------------------ | -------------- |
+| 0                  | 100            |
+| 1                  | 180            |
+| 2                  | 180            |
+| 3                  | 200            |
+
+Notice the important difference from the cohort retention question:
+### Cohort retention
+
+```text
+Month0 -> retained users
+Month1 -> retained users
+Month2 -> retained users
+```
+### LTV
+
+```text
+Month0 -> cumulative revenue
+Month1 -> cumulative revenue
+Month2 -> cumulative revenue
+```
+  """
+WITH first_purchase AS (
+    SELECT
+        customer_id,
+        date_trunc('month', order_date)::date AS order_month,
+        MIN(date_trunc('month', order_date)::date) OVER (
+            PARTITION BY customer_id
+        ) AS first_month,
+        revenue
+    FROM orders
+),
+month AS (
+    SELECT
+        customer_id,
+        first_month,
+        order_month,
+        (
+            EXTRACT(YEAR FROM order_month) * 12
+            + EXTRACT(MONTH FROM order_month)
+        )
+        -
+        (
+            EXTRACT(YEAR FROM first_month) * 12
+            + EXTRACT(MONTH FROM first_month)
+        ) AS month_since_signup,
+        SUM(revenue) AS revenue
+    FROM first_purchase
+    GROUP BY 1, 2, 3, 4
+),
+cohort_size AS (
+    SELECT
+        first_month AS cohort_month,
+        COUNT(DISTINCT customer_id) AS cohort_size
+    FROM month
+    WHERE month_since_signup = 0
+    GROUP BY 1
+),
+t2 AS (
+    SELECT
+        first_month AS cohort_month,
+        month_since_signup,
+        SUM(revenue) AS revenue
+    FROM month
+    GROUP BY 1, 2
+),
+t3 AS (
+    SELECT
+        cohort_month,
+        month_since_signup,
+        SUM(revenue) OVER (
+            PARTITION BY cohort_month
+            ORDER BY month_since_signup
+        ) AS cumulative_revenue
+    FROM t2
+)
+SELECT
+    t3.cohort_month,
+    t3.month_since_signup,
+    ROUND(t3.cumulative_revenue / cs.cohort_size, 2) AS cumulative_ltv
+FROM t3
+JOIN cohort_size cs
+    ON t3.cohort_month = cs.cohort_month
+ORDER BY 1, 2;
 
