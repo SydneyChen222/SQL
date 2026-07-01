@@ -1410,4 +1410,98 @@ FROM t3
 JOIN cohort_size cs
     ON t3.cohort_month = cs.cohort_month
 ORDER BY 1, 2;
+"""
+## Q5 — Subscription NRR Cohort Curve
+Table:
+subscriptions
+-------------
+customer_id
+start_date
+end_date
+mrr
+
+Each row represents a customer subscription.
+Return:
+cohort_month | months_since_signup | remaining_mrr | initial_mrr | nrr
+
+Definitions:
+A customer's `cohort_month` is the month of their `start_date`.
+
+For each cohort and each month since signup:
+* `initial_mrr` = total MRR of the cohort in Month 0
+* `remaining_mrr` = total MRR from cohort customers who are still active in that month
+* `nrr = remaining_mrr / initial_mrr`
+
+A subscription is active in Month N if:
+start_date <= month_end
+AND (end_date IS NULL OR end_date >= month_start)
+
+Generate months from `2024-01-01` to `2024-06-01`.
+Output should include all cohort-month combinations that can exist within that range.
+  """
+WITH months AS (
+    SELECT generate_series(
+        '2024-01-01'::date,
+        '2024-06-01'::date,
+        interval '1 month'
+    )::date AS calendar_month
+),
+cohorts AS (
+    SELECT DISTINCT
+        date_trunc('month', start_date)::date AS cohort_month
+    FROM subscriptions
+    WHERE start_date >= '2024-01-01'
+      AND start_date < '2024-07-01'
+),
+cohort_month_grid AS (
+    SELECT
+        c.cohort_month,
+        m.calendar_month,
+        (
+            EXTRACT(YEAR FROM m.calendar_month) * 12
+            + EXTRACT(MONTH FROM m.calendar_month)
+        )
+        -
+        (
+            EXTRACT(YEAR FROM c.cohort_month) * 12
+            + EXTRACT(MONTH FROM c.cohort_month)
+        ) AS months_since_signup
+    FROM cohorts c
+    JOIN months m
+        ON m.calendar_month >= c.cohort_month
+),
+initial_mrr AS (
+    SELECT
+        date_trunc('month', start_date)::date AS cohort_month,
+        SUM(mrr) AS initial_mrr
+    FROM subscriptions
+    WHERE start_date >= '2024-01-01'
+      AND start_date < '2024-07-01'
+    GROUP BY 1
+),
+remaining_mrr AS (
+    SELECT
+        g.cohort_month,
+        g.months_since_signup,
+        SUM(CASE
+            WHEN s.start_date <= g.calendar_month + interval '1 month' - interval '1 day'
+             AND (s.end_date IS NULL OR s.end_date >= g.calendar_month)
+            THEN s.mrr
+            ELSE 0
+        END) AS remaining_mrr
+    FROM cohort_month_grid g
+    LEFT JOIN subscriptions s
+        ON date_trunc('month', s.start_date)::date = g.cohort_month
+    GROUP BY g.cohort_month, g.months_since_signup
+)
+SELECT
+    r.cohort_month,
+    r.months_since_signup,
+    r.remaining_mrr,
+    i.initial_mrr,
+    ROUND(r.remaining_mrr::numeric / NULLIF(i.initial_mrr, 0), 4) AS nrr
+FROM remaining_mrr r
+JOIN initial_mrr i
+    ON r.cohort_month = i.cohort_month
+ORDER BY r.cohort_month, r.months_since_signup;
 
