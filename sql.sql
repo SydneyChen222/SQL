@@ -1439,6 +1439,86 @@ AND (end_date IS NULL OR end_date >= month_start)
 Generate months from `2024-01-01` to `2024-06-01`.
 Output should include all cohort-month combinations that can exist within that range.
   """
+with month as (
+  select generate_series (
+  '1/1/2024',
+  '6/1/2024',
+  interval '1 month' 
+  )::date as month
+),
+  t1 as (
+SELECT
+    s1.month as cohort_month,
+    EXTRACT(YEAR FROM AGE(s2.month, s1.month)) * 12 +
+    EXTRACT(MONTH FROM AGE(s2.month, s1.month))      AS diff
+FROM month s1
+JOIN month s2 
+  ON s2.month >= s1.month
+ORDER BY s1.month, diff
+  ),
+first_month AS (
+    SELECT
+        customer_id,
+        date_trunc('month', start_date)::date AS cohort_month,
+  date_trunc('month',end_date)::date as end_month,
+         (
+            EXTRACT(YEAR FROM case when date_trunc('month',end_date) >= '6/1/2024' or end_date is null
+  then '6/1/2024' else date_trunc('month',end_date)) * 12
+            + EXTRACT(MONTH FROM case when date_trunc('month',end_date) >= '6/1/2024' or end_date is null
+  then '6/1/2024' else date_trunc('month',end_date))
+        )
+        -
+        (
+            EXTRACT(YEAR FROM date_trunc('month',start_date)) * 12
+            + EXTRACT(MONTH FROM date_trunc('month',start_date))
+        ) AS month_since_signup,
+  mrr
+    FROM subscriptions
+),
+  t2 as (
+  SELECT
+    customer_id,
+    cohort_month,
+    end_month,
+    mrr,
+    (cohort_month + (n * INTERVAL '1 month'))::date AS expanded_month,
+  n as month_since_signup
+FROM first_month,
+LATERAL GENERATE_SERIES(0, month_since_signup) AS n
+ORDER BY customer_id, expanded_month),
+  
+  initial as (
+  select cohort_month,
+  sum(mrr) as initial_mrr
+  from t2 
+  where expanded_month = cohort_month
+  group by 1
+  ),
+  remaining as (
+  select cohort_month,
+  expanded_month, 
+  month_since_signup,
+  sum(mrr) as remaining_mrr
+  from t2
+  group by 1,2,3
+  )
+
+  select t1.cohort_month,
+ t1.diff as month_since_signup,
+   t2.remaining_mrr,
+  t3.initial_mrr,
+   ROUND(COALESCE(t2.remaining_mrr, 0)::numeric / NULLIF(t3.initial_mrr, 0), 4) AS nrr
+  from t1
+  left join initial t3
+  on t1.cohort_month = t3.cohort_month
+  left join remaining t2 
+  on t1.cohort_month = t2.cohort_month
+  and t1.diff = t2.month_since_signup
+  
+  
+  
+
+  
 WITH months AS (
     SELECT generate_series(
         '2024-01-01'::date,
