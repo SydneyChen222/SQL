@@ -42,7 +42,7 @@ Important: `payment_events` can have multiple rows per transaction. Use the **la
 """
 with final_event as (
   select transaction_id, event_time,
-  max(event_time) over(partition by transaction_id order by event_time desc) as final_time, 
+  max(event_time) over(partition by transaction_id) as final_time, 
   event_type, reason_code
   from payment_events
   order by 1,2
@@ -73,7 +73,7 @@ authorized as (
   on t1.transaction_id = t2.transaction_id
   left join fx_rates t3 
   on t3.rate_date::date = t2.created_at::date
-  and t3.curency = t2.currency
+  and t3.currency = t2.currency
   group by 1,2
   order by 1,2
 )
