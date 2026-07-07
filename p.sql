@@ -119,6 +119,27 @@ authorization_rate_change_pp::numeric
 from previous
 where authorization_rate_change_pp < -0.05
 order by 1,2
+"""
+ discrepancy investigation.**
+Business asks:
+> “Our dashboard says February processed volume is much higher than the finance report. 
+  Please identify whether the issue may come from joining transactions to payment events directly.”
+  
+Write a query comparing two calculations by merchant/month:
+1. **Correct volume**
+   Use only one final event per transaction, and sum authorized transaction amount once.
+
+2. **Naive volume**
+   Join `transactions` directly to `payment_events`, filter `event_type = 'authorized'`, and sum amount.
+
+Output:
+merchant_id
+month
+correct_authorized_volume
+naive_authorized_volume
+volume_difference
+Goal: detect whether duplicate/multiple event rows could inflate volume.
+  """
 
 
 
