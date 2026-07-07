@@ -140,6 +140,19 @@ naive_authorized_volume
 volume_difference
 Goal: detect whether duplicate/multiple event rows could inflate volume.
   """
+with final_event as (
+  select transaction_id, event_time,
+  max(event_time) over(partition by transaction_id) as final_time, 
+  event_type, reason_code
+  from payment_events
+  order by 1,2
+),
+t1 as (
+  
+)
+
+
+
 
 
 
