@@ -147,10 +147,42 @@ with final_event as (
   from payment_events
   order by 1,2
 ),
+   final_authorized as  (
+  select distinct(transaction_id) as transaction_id
+  from final_event
+  where event_time = final_time
+  and event_type = 'authorized'
+  ),
 t1 as (
-  
+  select t1.merchant_id, date_trunc('month',t1.created_at) as month,
+  sum(amount) as correct_authorized_amount
+  from transactions t1
+  right join final_authorized t2
+  on t1.transaction_id = t2.transaction_id
+  group by 1,2
+  order by 1,2
+),
+native as (
+  select t1.merchant_id, date_trunc('month',t1.created_at) as month,
+  sum(t1.amount) as naive_authorized_volume
+  from transactions t1
+  join payment_events t2
+  on t1.transaction_id = t2.transaction_id
+  where t2.event_type = 'authorized'
+  group by 1,2
+  order by 1,2
 )
-
+select t1.merchant_id,t1.month,
+  t1.correct_authorized_amount,
+  t2.native_authorized_amount,
+   coalesce(t2.naive_authorized_amount,0)
+  - coalesce(t1.correct_authorized_amount,0)
+  as volume_difference
+from t1
+left join native t2 
+on t1.merchant_id = t2.merchant_id
+and t1.month = t2.month
+order by 1,2
 
 
 
