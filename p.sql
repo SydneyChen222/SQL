@@ -88,7 +88,37 @@ left join authorized t2
 on t1.merchant_id = t2.merchant_id
 and t1.month = t2.month
 order by 1,2
-
+"""
+Using your result as `merchant_monthly`, write a query to return merchants whose
+  **authorization rate dropped by more than 5 percentage points compared with the previous month**.
+Expected output columns:
+merchant_id
+month
+authorization_rate
+previous_month_authorization_rate
+authorization_rate_change_pp
+Key point:
+90% → 84% = -6 percentage points
+That should qualify.
+  """
+with previous as (
+  select merchant_id,
+  month,
+  authorized_rate,
+  LAG(authorized_rate) OVER(Partition by merchant_id order by month) as previous_month_authorization_rate,
+  authorized_rate - 
+  LAG(authorized_rate) OVER(Partition by merchant_id order by month) as authorization_rate_change_pp
+  from merchant_monthly
+  order by 1,2
+)
+select merchant_id,
+month,
+authorized_rate as authorization_rate,
+previous_month_authorization_rate,
+authorization_rate_change_pp::numeric
+from previous
+where authorization_rate_change_pp < -0.05
+order by 1,2
 
 
 
