@@ -184,6 +184,160 @@ on t1.merchant_id = t2.merchant_id
 and t1.month = t2.month
 order by 1,2
 
+"""
+## PROJECT 1 — SQL: Settlement & Merchant Health (~90 min)
+**Schema + data** (this is your full universe — hand-verify against it):
+```
+merchants
+---------
+merchant_id | merchant_name | country | tier    | onboarded_at
+10          | Acme          | US      | gold    | 2023-11-01
+20          | Globex        | GB      | silver  | 2024-01-15
+30          | Initech       | DE      | gold    | 2023-06-20
+40          | Umbrella      | US      | bronze  | 2024-02-01
+50          | Hooli         | GB      | silver  | 2024-02-10
+```
+transactions
+------------
+txn_id | merchant_id | created_at          | amount   | currency | status       | method
+1      | 10          | 2024-03-01 09:15    | 1200.00  | USD      | authorized   | card
+2      | 10          | 2024-03-01 22:40    | 800.00   | USD      | authorized   | wallet
+3      | 10          | 2024-03-03 11:00    | 500.00   | USD      | declined     | card
+4      | 10          | 2024-03-04 08:30    | 300.00   | USD      | refunded     | card
+5      | 20          | 2024-03-01 14:00    | 2000.00  | GBP      | authorized   | card
+6      | 20          | 2024-03-02 10:20    | 1500.00  | GBP      | chargeback   | card
+7      | 20          | 2024-03-02 16:45    | 900.00   | GBP      | authorized   | wallet
+8      | 20          | 2024-03-05 12:00    | 1100.00  | GBP      | authorized   | card
+9      | 30          | 2024-03-01 07:00    | 400.00   | EUR      | authorized   | card
+10     | 30          | 2024-03-02 09:30    | 650.00   | EUR      | authorized   | wallet
+11     | 30          | 2024-03-04 13:15    | 720.00   | EUR      | declined     | card
+12     | 30          | 2024-03-06 18:00    | 380.00   | EUR      | authorized   | card
+13     | 40          | 2024-03-02 11:11    | 250.00   | USD      | authorized   | card
+14     | 40          | 2024-03-03 15:00    | 90.00    | USD      | refunded     | wallet
+15     | 50          | 2024-03-01 20:00    | 3000.00  | GBP      | authorized   | card
+16     | 50          | 2024-03-01 20:30    | 2200.00  | GBP      | authorized   | card
+17     | 50          | 2024-03-03 09:00    | 1800.00  | GBP      | chargeback   | wallet
+18     | 50          | 2024-03-04 10:00    | 2500.00  | GBP      | authorized   | card
+```
+(Statuses in play: `authorized`, `declined`, `refunded`, `chargeback`.)
+
+**Q1 (warm-up).** Total authorized `amount` and authorized transaction *count*, per merchant. 
+  Include merchant name. Order by authorized amount desc.
+"""
+select t1.merchant_id,t2.merchant_name,
+  count(case when t1.status = 'authorized' then txn_id end) as authorized_transaction,
+   coalesce(sum(case when t1.status = 'authorized' then amount end),0) as authorized_amount
+  from transactions t1
+  left join merchants t2
+  on t1.merchant_id = t2.merchant_id
+  group by 1,2
+  order by 4 desc
+  
+  """
+**Q2 (conditional aggregation).** For each merchant, return: 
+  total transaction count, authorization rate, 
+  chargeback rate, and refund rate — each as a percentage (2 dp).
+  Auth rate = authorized ÷ all. 
+  Chargeback rate and refund rate — 
+  *you decide the denominator and state it.* Only include merchants with ≥ 3 total transactions.
+"""
+  select merchant_id,
+  count(txn_id) as total_transaction_count,
+  round(100* count(case when status = 'authorized' then txn_id end)/nullif(count(txn_id),0),2) as authorization_rate,
+  round(100*count(case when status = 'chargeback' then txn_id end) /nullif(count( case when status = 'authorized' then txn_id end),0),2) as chargeback_rate,
+  round(100*count(case when status = 'refunded' then txn_id end)/nullif(count(case when status = 'authorized' then txn_id end),0),2) as refund_rate
+  from transactions
+  group by 1
+  having count(txn_id)>= 3
+  --- I'm defining chargeback and refund rate over authorized transactions, since those events can only occur on authorized payments — note that differs from the auth-rate denominator, which is all transactions. If you'd prefer all three on a common base, I'd switch to total."
+  
+  """
+**Q3 (window function).** Rank merchants by total authorized volume **within their country**, highest = rank 1.
+  Return only each country's **top-ranked** merchant. Handle the tie-break rule explicitly and say which you chose.
+"""
+  with t1 as (
+  select transactions.merchant_id,country,
+  count(case when status = 'authorized' then amount end) as authorized_volume
+  from transactions 
+  left join merchants
+  on transactions.merchant_id = merchants.merchant_id
+  group by 1,2
+  order by 1,2
+  ),
+  rak as (
+  select merchant_id, country,
+  authorized_volume,
+  row_number() over(PARTITION BY country order by authorized_volume desc) as rnk
+  from t1
+  )
+  select merchant_id,country,authorized_volume,
+  rnk
+  from rak
+  where rnk =1
+  order by country
+  
+  """
+  
+**Q4 (calendar spine).** For merchant 50 (Hooli), produce a row for **every day** from 2024-03-01 to 2024-03-06 with that day's total authorized amount. 
+  Days with none must show 0. Order by day.
+  """
+with daily as (
+  select generate_series(
+  '2024-03-01'::date,
+  '2024-03-06'::date,
+  interval '1 day')::date
+  as days
+  )
+
+select days,
+  coalesce(sum(amount),0) as authorized_amount
+  from daily t1
+  left join transactions t2
+  on t1.days = t2.created_at::date
+  and t2.merchant_id = 50
+  and t2.status = 'authorized'
+  group by 1
+  order by 1
+  """
+
+**Q5 (window + spine, builds on Q4).** Extend Q4: add a column for **day-over-day change** in authorized amount (today − yesterday). 
+  First day is null. (This is the spine + `LAG` combo — the spine is what makes the day-over-day correct, since it guarantees no missing days.)
+"""
+with daily as (
+  select generate_series(
+  '2024-03-01'::date,
+  '2024-03-06'::date,
+  interval '1 day')::date
+  as days
+  ),
+  t1 as (
+select days,
+  coalesce(sum(amount),0) as authorized_amount
+  from daily t1
+  left join transactions t2
+  on t1.days = t2.created_at::date
+  and t2.merchant_id = 50
+  and t2.status = 'authorized'
+  group by 1)
+  select days,
+  authorized_amount,
+  authorized_amount - LAG(authorized_amount) OVER(ORDER BY days) as dod_change
+  from t1
+  order by 1
+
+  """
+**Q6 (design / discrepancy — no code, ~5 sentences).** Finance reports that a merchant's *settled* amount for 
+  March is lower than the sum of their authorized transactions you computed. Give the top 3 reasons this legitimately happens in payments,
+  and how you'd investigate which one applies. *(This is the "data discrepancies" beat from the real skills round.)*
+
+  1. Refunds and chargebacks reduce settlement. Authorized = gross amount approved. 
+  Settled = what actually lands in the merchant's account = authorized minus refunds, minus chargebacks, minus reversals.
+  2. Authorization ≠ capture. An authorization only reserves funds; money moves only when the transaction is captured. Some authorizations expire, get voided, or are never captured (customer abandons, merchant cancels). 
+  Uncaptured auths inflate "authorized" but never settle. Auth-to-capture gap is a core payments concept.
+  3. Fees and timing (settlement lag). The processor deducts interchange + scheme + acquirer fees before settling, so net settled is structurally a few % below gross authorized. And settlement is batched with a delay (T+1, T+2, rolling reserves) — 
+  so a month's authorized volume and that month's settled volume cover different transactions at the cutoff. 
+  """
+
 
 
 
