@@ -326,19 +326,87 @@ select days,
   order by 1
 
   """
-**Q6 (design / discrepancy — no code, ~5 sentences).** Finance reports that a merchant's *settled* amount for 
-  March is lower than the sum of their authorized transactions you computed. Give the top 3 reasons this legitimately happens in payments,
-  and how you'd investigate which one applies. *(This is the "data discrepancies" beat from the real skills round.)*
+users
+user_id    signup_date   country
 
-  1. Refunds and chargebacks reduce settlement. Authorized = gross amount approved. 
-  Settled = what actually lands in the merchant's account = authorized minus refunds, minus chargebacks, minus reversals.
-  2. Authorization ≠ capture. An authorization only reserves funds; money moves only when the transaction is captured. Some authorizations expire, get voided, or are never captured (customer abandons, merchant cancels). 
-  Uncaptured auths inflate "authorized" but never settle. Auth-to-capture gap is a core payments concept.
-  3. Fees and timing (settlement lag). The processor deducts interchange + scheme + acquirer fees before settling, so net settled is structurally a few % below gross authorized. And settlement is batched with a delay (T+1, T+2, rolling reserves) — 
-  so a month's authorized volume and that month's settled volume cover different transactions at the cutoff. 
-  """
+events
+user_id    event_name     event_time
+`event_name` can include: file_created file_shared comment_added
 
-
-
-
-
+Write a SQL query that returns, for each signup month:
+* number of users who signed up
+* number of those users who created at least one file within 7 days of signup
+* activation rate
+signed_up_users = all users who signed up in that signup month.
+activated_users = users who performed at least one file_created event within 7 days (inclusive) of their signup date.
+Each user should count at most once, regardless of how many files they created.
+  
+Example output:
+signup_month | signed_up_users | activated_users | activation_rate
+2026-01-01   | 1000            | 420             | 0.420
+"""
+  with signup as (
+select date_trunc('month',signup_date) as signup_month,
+  count(distinct(user_id)) as signed_up_users
+  from users
+  group by 1
+  order by 1
+),
+active as (
+  select date_trunc('month',signup_date) as signup_month,
+  count(distinct(case when events.event_name = 'file_created' then events.user_id end)) as activated_users
+  from users 
+  left join events 
+  on users.user_id = events.user_id
+  and users.signup_date <= events.event_time
+  and users.signup_date + interval '7 days' >= events.event_time
+  group by 1
+  order by 1
+)
+select signup.signup_month,
+  signup.signed_up_users,
+  active.activated_users,
+  active.activated_users::numeric/nullif(signup.signed_up_users,0) as activation_rate
+from signup
+left join active
+on signup.signup_month = active.signup_month
+order by 1
+"""
+  A user is activated only if they both create a file and share a file within seven days of signup.
+  The two actions can happen in any order, and each user should still count once."""
+  
+  with signup as (
+select date_trunc('month',signup_date) as signup_month,
+  count(distinct(user_id)) as signed_up_users
+  from users
+  group by 1
+  order by 1
+),
+active as (
+  select date_trunc('month',signup_date) as signup_month,
+   count(distinct(case when (exists (
+  select 1 from events
+  where events.user_id = users.user_id
+  and events.event_name = 'file_created'
+    and users.signup_date <= events.event_time
+  and users.signup_date + interval '7 days' >= events.event_time)
+  and 
+  exists(select 1
+  from events
+  where events.user_id = users.user_id
+  and event.event_name = 'file_shared'
+    and users.signup_date <= events.event_time
+  and users.signup_date + interval '7 days' >= events.event_time)
+  then events.user_id end))) as activated_users
+  from users 
+  group by 1
+  order by 1
+)
+select signup.signup_month,
+  signup.signed_up_users,
+  active.activated_users,
+  active.activated_users::numeric/nullif(signup.signed_up_users,0) as activation_rate
+from signup
+left join active
+on signup.signup_month = active.signup_month
+order by 1
