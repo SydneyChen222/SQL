@@ -410,3 +410,54 @@ from signup
 left join active
 on signup.signup_month = active.signup_month
 order by 1
+"""
+subscriptions(account_id, plan, seats, mrr, started_date, churned_date)
+accounts(account_id, name, region, segment)
+Part A: "Total MRR by region for active subscriptions." — join subscriptions to accounts, filter to active 
+"active" means churned_date IS NULL, group by region.
+Part B: "For each region, return the top 2 accounts by MRR." — 
+Part C (if time): "Month-over-month MRR change." — 
+"""
+  --part a 
+select t1.region,
+sum(t2.mrr) as total_active_mrr
+from accounts t1 
+left join subscriptions t2
+on t1.account_id = t2.account_id
+and t2.churned_date is null
+group by 1
+--part b
+with acct as (
+    select a.region, a.account_id, sum(s.mrr) as acct_mrr
+    from accounts a
+    join subscriptions s
+      on a.account_id = s.account_id and s.churned_date is null
+    group by 1, 2
+),
+ranked as (
+    select region, account_id, acct_mrr,
+           row_number() over (partition by region order by acct_mrr desc) as rn
+    from acct
+)
+select region, account_id, acct_mrr
+from ranked
+where rn <= 2
+order by region, acct_mrr desc;
+--part c
+with region as (
+  select t1.region,date_trunc('month',started_date) as month,
+sum(t2.mrr) as total_active_mrr
+from accounts t1 
+left join subscriptions t2
+on t1.account_id = t2.account_id
+where t2.churned_date is null
+group by 1,2
+)
+select region,month,total_active_mrr,
+LAG(total_active_mrr) OVER(Partition by region ORDER BY month) as previous_mrr,
+  total_active_mrr - LAG(total_active_mrr) OVER(Partition by region ORDER BY month) as mom_change
+from region
+order by 1,2
+
+
+
