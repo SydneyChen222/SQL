@@ -1090,6 +1090,157 @@ and t1.session_start <= t2.event_time
 group by 1,2,3,4
 order by 1,2
 
+
+"""users----
+  user_id        INTEGER
+signup_date    DATE
+job_title      VARCHAR
+  file_evnet ----
+  user_id         INTEGER
+file_id         VARCHAR
+event_type      VARCHAR
+event_time      TIMESTAMP
+  A new session begins whenever the gap between two consecutive events for the same user is more than 30 minutes.
+  possible event_type: 
+  file_opened    file_edited  comment_added   file_shared
+  expected output:
+  | user_id | session_number | session_start | session_end | duration_minutes | total_events | distinct_files |
+| ------- | -------------- | ------------- | ----------- | ---------------- | ------------ | -------------- |
+| 1       | 1              | 09:00         | 09:18       | 18               | 5            | 2              |
+| 1       | 2              | 11:10         | 11:44       | 34               | 8            | 4              |
+| 2       | 1              | 10:30         | 10:55       | 25               | 3            | 1              |
+
+  """
+  with session as (
+  select user_id,file_id,
+  event_type, event_time,
+  LAG(event_time) OVER(PARTITION BY user_id ORDER BY event_time) as previous_time,
+    case when  LAG(event_time) OVER(PARTITION BY user_id ORDER BY event_time) is null then null 
+  else EXTRACT(EPOCH FROM (event_time -  LAG(event_time) OVER(PARTITION BY user_id ORDER BY event_time))) / 60 
+  end as gap
+  from file_event
+  order by 1,4),
+  session2 as 
+  (select user_id,file_id,
+  event_type,event_time,previous_time,
+  gap,
+  ROW_NUMBER() OVER(PARTITION BY user_id ORDER BY event_time) as session_number
+  from seesion
+  where gap is null or gap>30
+  order by 1,7
+  ),
+  session3 as (
+  select user_id,session_number,
+  event_time as session_start,
+  LEAD(previous_time) OVER(PARTITON BY user_id ORDER BY event_time) as session_end
+  from session2
+  order by 1,2
+  )
+  select t1.user_id,t1.session_number,
+  t1.session_start,
+  coalesce(t1.session_end,max(t2.event_time)) as session_end,
+   EXTRACT(
+        EPOCH FROM (
+            COALESCE(t1.session_end,MAX(t2.event_time)) - t1.session_start)) / 60.0 AS duration_minutes,
+  count(evnet_type) as total_events,
+  count(distinct(file_id)) as distinct_files
+  from session3 t1
+  left join session t2
+  on t1.user_id = t2.user_id
+  and t1.session_start <= t2.event_time
+  and (t2.event_time<= t1.session_end
+  or t1.session_end IS NULL)
+  group by 1,2,3,4,5
+  order by 1,2,3,4,5
+  --Return the average session duration for every user
+  
+  select user_id,
+  avg(duration_minutes) as avg_duration
+  from result1
+  group by 1
+  order by 1
+  --Return the percentage of sessions that contain at least one file_shared
+  with result as(
+    select t1.user_id,t1.session_number,
+  t1.session_start,
+  coalesce(t1.session_end,max(t2.event_time)) as session_end,
+   EXTRACT(
+        EPOCH FROM (
+            COALESCE(t1.session_end,MAX(t2.event_time)) - t1.session_start)) / 60.0 AS duration_minutes,
+  sum(case when event_type = 'file_shared' then 1 else 0 end) as file_shared,
+  count(evnet_type) as total_events,
+  count(distinct(file_id)) as distinct_files
+  from session3 t1
+  left join session t2
+  on t1.user_id = t2.user_id
+  and t1.session_start <= t2.event_time
+  and (t2.event_time<= t1.session_end
+  or t1.session_end IS NULL)
+  group by 1,2,3,4,5
+  order by 1,2,3,4,5)
+  select sum(case when file_shared = 0 then 0 else 1 end)::numeric / nullif(count(session_number),0) as percentage_file_shared_session
+  from result
+  
+---A product manager believes users become more engaged after they share a file.
+---For every user, calculate
+ """ 
+  average number of events  BEFORE the first file_shared session
+average number of events   AFTER the first file_shared session
+  Ignore users who never shared a file.
+  """
+    with shared as (
+select user_id,min(event_time) as first_shared_time,
+  from file_event
+  where event_type = 'file_shared'
+  group by 1
+  ),
+  result as (
+   select t1.user_id,t1.session_number,
+  t1.session_start,
+  coalesce(t1.session_end,max(t2.event_time)) as session_end,
+   EXTRACT(
+        EPOCH FROM (
+            COALESCE(t1.session_end,MAX(t2.event_time)) - t1.session_start)) / 60.0 AS duration_minutes,
+  sum(case when event_type = 'file_shared' then 1 else 0 end) as file_shared,
+  count(evnet_type) as total_events,
+  count(distinct(file_id)) as distinct_files
+  from session3 t1
+  left join session t2
+  on t1.user_id = t2.user_id
+  and t1.session_start <= t2.event_time
+  and (t2.event_time<= t1.session_end
+  or t1.session_end IS NULL)
+  group by 1,2,3,4,5
+  order by 1,2,3,4,5),
+  flag as (
+  select user_id,
+  first_shared_time,session_number,
+  session_start,session_end,total_events,
+  case when first_shared_time >= session_start and first_shared_time <= session_end then 'first_shared_session'
+  when first_shared_time > session_end then 'session_before'
+  when first_shared_time < session_start then 'session_after' end as flag
+  from result t1
+  inner join shared t2
+  on t1.user_id = t2.user_id)
+  select user_id, AVG(
+    CASE
+        WHEN flag = 'session_before'
+        THEN total_events::numeric
+    END
+) as avg_event_before_shared,
+  AVG(
+    CASE
+        WHEN flag = 'session_after'
+        THEN total_events::numeric
+    END
+) as avg_event_after_shared
+  from flag
+  group by 1
+  
+
+
+
+  
 """
 Purchase Funnel Conversion
 Table:
