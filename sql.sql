@@ -1735,4 +1735,355 @@ FROM remaining_mrr r
 JOIN initial_mrr i
     ON r.cohort_month = i.cohort_month
 ORDER BY r.cohort_month, r.months_since_signup;
+"""
+  subscriptions
+
+customer_id      INTEGER
+subscription_id  INTEGER
+plan_name        VARCHAR
+monthly_price    DECIMAL(10,2)
+start_date       DATE
+end_date         DATE
+monthly_price is the monthly MRR contribution of the subscription.
+end_date is NULL if the subscription is still active.
+A customer may have multiple subscriptions at the same time.
+Assume there are no overlapping records for the same subscription_id.
+
+A subscription contributes to a month if it is active at any point during that month.
+active_customers = distinct customers with at least one active subscription.
+active_subscriptions = number of active subscriptions.
+MRR = sum of monthly_price of all active subscriptions.
+  
+  Write a SQL query that returns the monthly MRR from January 2025 through June 2025.
+  | month | active_customers | active_subscriptions | MRR |
+| ----- | ---------------- | -------------------- | --- |
+  """
+with month as (
+  select generate_series(
+  '1/1/2025',
+  '6/1/2025',
+  interval '1 month'
+  )::date as month
+)
+select month,
+  count(distinct(customer_id)) as active_customers,
+  count(distinct(subscription_id)) as active_subscriptions,
+  coalesce(sum(monthly_price),0) as mrr
+ from month
+left join subscriptions t2
+on date_trunc('month',start_date) <= month
+and (date_trunc('month',end_date) >= month or end_date is null)
+group by 1
+order by 1
+
+"""
+  user_sessions
+  user_id        INTEGER
+session_start  TIMESTAMP
+  For each month from January 2025 through June 2025, return :
+  | month | DAU | WAU | stickiness |
+| ----- | --: | --: | ---------: |
+Definitions:
+DAU = average Daily Active Users during the month.
+Daily Active Users = distinct users who had at least one session that day.
+WAU = average Weekly Active Users during the month.
+Weekly Active Users = distinct users who had at least one session that week.
+Stickiness = DAU / WAU.
+  
+Return one row per month.
+  """
+with month as (
+  select generate_series(
+  '1/1/2025',
+  '6/1/2025',
+  interval '1 month'
+  )::date as month
+),
+daily as (
+  select date_trunc('day',session_start) as daily,
+  count(distinct(user_id)) as daily_active
+  from user_sessions
+  group by 1
+  order by 1
+),
+weekly as (
+  select date_trunc('week',session_start) as weekly,
+  count(distinct(user_id)) as weekly_active
+  from user_sessions
+  group by 1
+  order by 1
+),
+  daily_avg as (
+select month,
+  avg(daily_active) as DAU
+from month
+left join daily t1
+on month.month = date_trunc('month',t1.daily)
+  group by 1),
+  weekly_avg as (
+  select month,
+  avg(weekly_active) as WAU
+from month
+left join weekly t2
+on month.month = date_trunc('month',t2.weekly)
+  group by 1
+)
+select month,
+  DAU,
+  WAU,
+  DAU/nullif(WAU,0) as stickness
+  from 
+  daily_avg t1
+  left join weekly_avg t2 on 
+  t1.month = t2.month
+order by 1
+"""
+user_activity
+-------------
+user_id       INTEGER
+activity_date DATE
+
+Each row means that a user was active on that date. A user can have multiple rows on the same date.
+Write query that returns **monthly cohort retention** for users whose first active month is between January 2025 and March 2025.
+Return:
+cohort_month
+month_number
+cohort_size
+retained_users
+retention_rate
+
+Definitions:
+* `cohort_month` = the month of the user’s first-ever activity
+* `month_number = 0` for the cohort month, `1` for the following month, and so on
+* `cohort_size` = total number of users in that cohort
+* `retained_users` = number of users from that cohort who were active in the corresponding month
+* `retention_rate = retained_users / cohort_size`
+* Count each user at most once per activity month
+
+Example:
+cohort_month | month_number | cohort_size | retained_users | retention_rate
+2025-01-01   | 0            | 100         | 100            | 1.000
+2025-01-01   | 1            | 100         | 62             | 0.620
+2025-01-01   | 2            | 100         | 45             | 0.450
+
+You may assume the activity data extends through June 2025.
+  """
+WITH monthly_activity AS (
+    SELECT DISTINCT
+        user_id,
+        DATE_TRUNC('month', activity_date)::date AS active_month
+    FROM user_activity
+),
+first_month AS (
+    SELECT
+        user_id,
+        active_month,
+        MIN(active_month) OVER (
+            PARTITION BY user_id
+        ) AS cohort_month
+    FROM monthly_activity
+),
+month as (
+  select generate_series(
+  '1/1/2025',
+  '6/1/2025',
+  interval '1 month'
+  )::date as month
+),
+cohort_month as (
+  select cohort_month,
+  count(distinct(user_id)) as cohort_size
+  from first_month
+  group by 1
+),
+cohort_month_grid AS (
+    SELECT
+        c.cohort_month,
+        m.month,
+        (
+            EXTRACT(YEAR FROM m.month) * 12
+            + EXTRACT(MONTH FROM m.month)
+        )
+        -
+        (
+            EXTRACT(YEAR FROM c.cohort_month) * 12
+            + EXTRACT(MONTH FROM c.cohort_month)
+        ) AS months_number,
+  c.cohort_size
+    FROM cohort_month c
+    JOIN month m
+        ON m.month >= c.cohort_month
+  where c.cohort_month between '1/1/2025' and '3/1/2025'
+)
+   SELECT
+        g.cohort_month,
+        g.months_number,
+      g.cohort_size,
+  count(distinct( user_id)) as retained_users,
+  count(distinct(user_id))::numberic 
+  / nullif(g.cohort_size,0) as retention_rate
+    FROM cohort_month_grid g
+    LEFT JOIN first_month s
+        ON s.cohort_month = g.cohort_month
+     AND s.active_month = g.month
+    GROUP BY 1,2
+  order by 1,2
+
+""" Daily Active Users and 7-Day Rolling Average
+events
+-------
+user_id        INT
+event_time     TIMESTAMP
+event_type     VARCHAR
+Each row represents one user event.
+
+Write a SQL query that returns, for every calendar date:
+event_date
+daily_active_users
+rolling_7d_avg_dau
+
+Definitions:
+* `daily_active_users` = number of distinct users with at least one event that day.
+* `rolling_7d_avg_dau` = average DAU for the current date and previous six calendar dates.
+* Dates with no events must still appear with `daily_active_users = 0`.
+* Assume PostgreSQL.
+* The output date range should run from the earliest event date through the latest event date.
+
+Example data:
+user_id | event_time
+--------+---------------------
+1       | 2026-07-01 10:00:00
+1       | 2026-07-01 11:00:00
+2       | 2026-07-01 12:00:00
+1       | 2026-07-03 09:00:00
+3       | 2026-07-03 15:00:00
+2       | 2026-07-04 14:00:00
+  """
+WITH daily_active AS (
+    SELECT
+        event_time::date AS event_date,
+        COUNT(DISTINCT user_id) AS daily_active_users
+    FROM events
+    GROUP BY event_time::date
+),
+
+date_bounds AS (
+    SELECT
+        MIN(event_time::date) AS min_date,
+        MAX(event_time::date) AS max_date
+    FROM events
+),
+
+calendar_dates AS (
+    SELECT
+        GENERATE_SERIES(
+            min_date,
+            max_date,
+            INTERVAL '1 day'
+        )::date AS event_date
+    FROM date_bounds
+),
+
+daily_with_zeros AS (
+    SELECT
+        c.event_date,
+        COALESCE(d.daily_active_users, 0) AS daily_active_users
+    FROM calendar_dates c
+    LEFT JOIN daily_active d
+        ON c.event_date = d.event_date
+)
+
+SELECT
+    event_date,
+    daily_active_users,
+    AVG(daily_active_users) OVER (
+        ORDER BY event_date
+        ROWS BETWEEN 6 PRECEDING AND CURRENT ROW
+    ) AS rolling_7d_avg_dau
+FROM daily_with_zeros
+ORDER BY event_date
+"""
+users
+-----
+user_id
+signup_date
+
+events
+------
+user_id
+event_time
+  
+Return, for each `signup_date`:
+signup_date
+cohort_size
+day_7_retained_users
+day_7_retention_rate
+A user is retained if they have at least one event on Day 1 through Day 7 after signup.
+  """
+with signup as (
+  select date_trunc('day',signup_date) as signup_date,
+  count(distinct(user_id)) as cohort_size
+  from users
+  group by 1
+  order by 1
+ ),
+retained as (
+  select user_id,
+  date_trunc('day',signup_date) as signup_date,
+  date_trunc('day',event_time) as event_date,
+  case when date_trunc('day',event_time)::date - date_trunc('day',signup_date)::date<=7 and  date_trunc('day',event_time)::date > date_trunc('day',signup_date)::date then 1 else 0 end as gaps
+  from users u
+  left join events e
+  on u.user_id = e.user_id
+),
+seven_retain as (
+  select user_id,
+  signup_date,
+  sum(gaps) as flag
+  from retained
+  group by 1,2
+),
+retained_user as (
+  select signup_date,
+  count(distinct(case when flag >0 then user_id end)) as day_7_retained_users
+  from seven_retain
+  group by 1
+)
+select s.signup_date, cohort_size,
+   COALESCE(r.retained_users, 0) AS retained_users,
+    COALESCE(r.retained_users, 0)::numeric
+        / NULLIF(s.cohort_size, 0) AS retention_rate
+from signup s
+left join retained_user r
+on s.signup_date = r.signup_date
+order by 1;
+
+WITH signup AS (
+    SELECT
+        signup_date::date AS signup_date,
+        COUNT(DISTINCT user_id) AS cohort_size
+    FROM users
+    GROUP BY signup_date::date
+),
+retained_user AS (
+    SELECT
+        u.signup_date::date AS signup_date,
+        COUNT(DISTINCT e.user_id) AS retained_users
+    FROM users u
+    LEFT JOIN events e
+        ON u.user_id = e.user_id
+       AND e.event_time::date BETWEEN u.signup_date::date
+                                  AND u.signup_date::date + 7
+    GROUP BY u.signup_date::date
+)
+SELECT
+    s.signup_date,
+    s.cohort_size,
+    r.retained_users,
+    r.retained_users::numeric
+        / NULLIF(s.cohort_size, 0) AS retention_rate
+FROM signup s
+JOIN retained_user r
+    ON s.signup_date = r.signup_date
+ORDER BY s.signup_date;
 
